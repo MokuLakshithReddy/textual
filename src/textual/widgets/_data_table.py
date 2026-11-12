@@ -1513,6 +1513,7 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
             total_width,
             self._total_row_height + header_height,
         )
+        self._clear_caches()
 
     def _get_cell_region(self, coordinate: Coordinate) -> Region:
         """Get the region of the cell at the given spatial coordinate."""

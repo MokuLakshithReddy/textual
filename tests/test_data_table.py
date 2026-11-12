@@ -1489,3 +1489,51 @@ async def test_clicking_border_link_doesnt_crash():
         # Test clicking the link in the border doesn't crash with KeyError: 'row'
         await pilot.click(DataTable, offset=(5, 0))
         assert app.link_clicked is True
+
+
+async def test_data_table_cache_invalidation_after_dimension_update():
+    """Regression test for https://github.com/Textualize/textual/issues/6759
+
+    Ensure render caches are invalidated after dimensions/column widths are updated
+    on idle so rows rendered prior to dimension measurement do not stay truncated.
+    """
+    rows = [
+        ("0", "a-rather-long-project-name", "20261113", "some description"),
+        ("1", "another-long-project-name", "20261114", "another description"),
+    ]
+
+    class RebuiltTableApp(App):
+        def compose(self) -> ComposeResult:
+            yield DataTable()
+
+        def rebuild(self) -> None:
+            table = self.query_one(DataTable)
+            table.clear(columns=True)
+            for label in ("ID", "Project", "Due", "Description"):
+                table.add_column(label, key=label)
+            for i, row in enumerate(rows):
+                table.add_row(*row, key=f"row{i}")
+
+    app = RebuiltTableApp()
+    async with app.run_test(size=(80, 10)) as pilot:
+        table = app.query_one(DataTable)
+        app.rebuild()
+        await pilot.pause()
+
+        # Rebuild table and render lines before idle handler computes widths
+        app.rebuild()
+        for y in range(3):
+            table.render_line(y)
+
+        # Allow idle handler (_update_dimensions) to compute column widths
+        await pilot.pause()
+
+        # Lines must now reflect the full measured column widths
+        header = table.render_line(0).text.rstrip()
+        row0 = table.render_line(1).text.rstrip()
+        row1 = table.render_line(2).text.rstrip()
+
+        assert "Project" in header
+        assert "a-rather-long-project-name" in row0
+        assert "another-long-project-name" in row1
+
